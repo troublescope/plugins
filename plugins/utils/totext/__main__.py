@@ -54,4 +54,4 @@ async def totext(msg: Message):
         return await msg.edit_text(
             "<i>Transcription failed, maybe the message has no recognizable voice?</i>"
         )
-    return await msg.edit_text(f"<b>Transcribed text:</b>\n{resul}")
+    return await msg.edit_text(f"<b>Transcribed text:</b>\n{result}")
