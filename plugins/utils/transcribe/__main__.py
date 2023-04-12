@@ -43,6 +43,7 @@ async def transcribe_message(message: Message) -> str | None:
 async def stt_(msg: Message):
     """Speech to text using Telegram premium."""
     reply_msg = msg.reply_to_message
+    await msg.edit("processing...")
     if not reply_msg:
         return await msg.edit_text("`Please reply to video or voice note!`")
     if not userge.me.is_premium:
