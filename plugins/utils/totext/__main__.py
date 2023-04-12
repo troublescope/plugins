@@ -13,7 +13,7 @@ from pyrogram.errors import BadRequest
 
 from userge import userge, Message
 
-async def transcribe_message(message: Message) -> str | None:
+async def transcribe_message(message: Message):
     """Transcribes a voice message or a video note.
     Returns `None` if the message cannot be transcribed, `transcription_id` as an integer
     if the transcription is pending, or the transcribed text as a string if it's ready.
