@@ -9,38 +9,19 @@
 # All rights reserved.
 
 from pyrogram.errors import BadRequest
-from pyrogram.raw import functions, types
 
 from userge import userge, Message
 
-
-async def transcribe_message(message: Message) -> str | None:
-    """Transcribes a voice message or a video note.
-    Returns `None` if the message cannot be transcribed, `transcription_id` as an integer
-    if the transcription is pending, or the transcribed text as a string if it's ready.
-    """
-    try:
-        transcribed: types.messages.TranscribedAudio = await userge.invoke(
-            functions.messages.TranscribeAudio(
-                peer=await userge.resolve_peer(message.chat.id),
-                msg_id=message.id,
-            )
-        )
-    except BadRequest as e:
-        if isinstance(e.value, str) and "TRANSCRIPTION_FAILED" in e.value:
-            return None
-        raise
-    return transcribed.text
-
+from . import transcribe_message
 
 @userge.on_cmd(
-    "stt",
+    "totext",
     about={
         "header": "transcribe a file (speech to text)",
         "usage": "{tr}stt [reply to telegram video/audio note]",
     },
 )
-async def stt_(msg: Message):
+async def transcriber(msg: Message):
     """Speech to text using Telegram premium."""
     reply_msg = msg.reply_to_message
     await msg.edit("processing...")
