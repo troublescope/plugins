@@ -8,196 +8,50 @@
 #
 # All rights reserved.
 
-import io
-import os
-import re
-import traceback
-from asyncio import sleep
-from typing import Tuple
+from pyrogram.raw import functions, types
+from pyrogram.errors import BadRequest
 
-from aiohttp import ClientSession
-from pydub import AudioSegment
-from pydub.exceptions import CouldntDecodeError
+from userge import userge, Message
 
-from userge import userge, Message, config
-from userge.utils import is_url
-from userge.utils.exceptions import ProcessCanceled
-from ...misc.download import tg_download, url_download
-
-logger = userge.getLogger(__name__)
-
-
-class WitAiAPI:
+async def transcribe_message(message: Message):
+    """Transcribes a voice message or a video note.
+    Returns `None` if the message cannot be transcribed, `transcription_id` as an integer
+    if the transcription is pending, or the transcribed text as a string if it's ready.
     """
-    A class to interact with Wit.ai API
-    Based on https://github.com/charslab/TranscriberBot work
-    """
+    try:
+        transcribed: types.messages.TranscribedAudio = await userge.invoke(
+            functions.messages.TranscribeAudio(
+                peer=await userge.resolve_peer(message.chat.id),
+                msg_id=message.id,
+            )
+        )
+    except BadRequest as e:
+        if isinstance(e.value, str) and "TRANSCRIPTION_FAILED" in e.value:
+            return None
+        raise
+    return transcribed.text
 
-    def __init__(self, lang):
-        self.api_keys = {}
-        for i in filter(lambda x: x.startswith('WIT_AI_API_'), os.environ):
-            self.api_keys.update({i.split('WIT_AI_API_')[1].lower(): os.environ.get(i)})
-        self.api_url = "https://api.wit.ai"
-        self.lang = lang
-        self.chunks = None
-        self.text = ""
+@userge.on_cmd(
+    "totext",
+    about={
+        "header": "Voice/Video note to text.",
+        "description": "Transcribe audio/video using telegram premium.",
+        "usage": "{tr}totext reply [voice/video note]",
+    },
+)
+async def totext(msg: Message):
+    reply_msg = msg.reply_to_message
+    await msg.edit("processing...")
+    if not reply_msg:
+        return await msg.edit_text("`Please reply to video or voice note!`")
+    if not userge.me.is_premium:
+        return await msg.edit_text("`This feature only for Telegram premium user..!`")
+    if reply_msg.video_note is None and reply_msg.voice is None:
+        return await msg.edit_text("`No voice or video note found.`")
 
-    def has_api_key(self):
-        return self.api_keys.get(self.lang)
-
-    async def __transcribe_chunk(self, chunk, lang='ar') -> Tuple[str, str]:
-        """
-        Based on https://github.com/charslab/TranscriberBot/blob/
-        823b1423832b7117ad41c83abb3e25d58dd9e789/src/audiotools/
-        speech.py#L13
-        """
-        text = ""
-        error = ""
-        headers = {
-            'authorization': f'Bearer {self.api_keys[lang]}',
-            'accept': 'application/vnd.wit.20200513+json',
-            'content-type': 'audio/raw;encoding=signed-integer;bits=16;rate=8000;endian=little',
-        }
-        try:
-            async with ClientSession() as session, session.post(
-                f"{self.api_url}/speech", headers=headers,
-                data=io.BufferedReader(io.BytesIO(chunk.raw_data))
-            ) as resp:
-                if resp.status == 200:
-                    response = await resp.json()
-                    text = response['_text'] if '_text' in response else response['text']
-        except Exception as e:
-            error = f"Could not transcribe chunk: {e}\n{traceback.format_exc()}"
-
-        return text, error
-
-    @staticmethod
-    async def __generate_chunks(segment, length=20000 / 1001):
-        """
-        Based on https://github.com/charslab/TranscriberBot/blob/
-        823b1423832b7117ad41c83abb3e25d58dd9e789/
-        src/audiotools/speech.py#L49
-        """
-        return [segment[i:i + int(length * 1000)]
-                for i in range(0, len(segment), int(length * 1000))]
-
-    @staticmethod
-    async def __preprocess_audio(audio):
-        """
-        From https://github.com/charslab/TranscriberBot/blob/
-        823b1423832b7117ad41c83abb3e25d58dd9e789/
-        src/audiotools/speech.py#L67
-        """
-        return audio.set_sample_width(2).set_channels(1).set_frame_rate(8000)
-
-    async def transcribe(self, path):
-        """
-        Based on https://github.com/charslab/TranscriberBot/blob/
-        823b1423832b7117ad41c83abb3e25d58dd9e789/
-        src/audiotools/speech.py#L70
-        """
-        logger.info("Transcribing file %s", path)
-        try:
-            audio = AudioSegment.from_file(path)
-            chunks = await self.__generate_chunks(await self.__preprocess_audio(audio))
-            self.chunks = len(chunks)
-            logger.info("Got %d chunks", len(chunks))
-
-            for i, chunk in enumerate(chunks):
-                logger.info("Transcribing chunk %d", i)
-                text, error = await self.__transcribe_chunk(chunk, self.lang)
-                self.text += text
-                yield text, error
-
-        except CouldntDecodeError:
-            yield None, "`Error decoding the audio file. " \
-                        "Ensure that the provided audio is a valid audio file!`"
-
-
-@userge.on_cmd("stt", about={
-    'header': "transcribe a file (speech to text)",
-    'options': {'-t': 'send text to telegram as well as the transcription file'},
-    'usage': "{tr}stt lang [file / folder path | direct link | reply to telegram file]",
-    'examples': ['{tr}stt en link', '{tr}stt ar -t link']
-}, check_downpath=True, del_pre=True)
-async def stt_(message: Message):
-    """ Speech to text using Wit.ai """
-    send_text = bool('t' in message.flags)
-    replied = message.reply_to_message
-    message_id = replied.id if replied else message.id
-    regex = re.compile(r'([\S]*)(?: |)([\s\S]*)')
-    match = regex.search(message.filtered_input_str)
-    if not match:
-        await message.edit("`Please read .help stt`")
-        return
-    lang = match.group(1).lower()
-    api = WitAiAPI(lang)
-    if not api.has_api_key():
-        await message.edit(f'`Please set WIT_AI_API_{lang.upper()} variable first!`')
-        return
-    dl_loc = ""
-    file_name = ""
-    if replied and replied.media:
-        try:
-            dl_loc, _ = await tg_download(message, replied)
-            # Try to get file name from the media file.
-            try:
-                if hasattr(replied.audio, 'file_name'):
-                    file_name = replied.audio.file_name
-                elif hasattr(replied.video, 'file_name'):
-                    file_name = replied.video.file_name
-                elif hasattr(replied.document, 'file_name'):
-                    file_name = replied.document.file_name
-                else:
-                    file_name = os.path.basename(dl_loc)
-            except AttributeError:
-                pass
-        except ProcessCanceled:
-            await message.edit("`Process Canceled!`", del_in=5)
-            return
-        except Exception as e_e:
-            await message.err(e_e)
-            return
-    else:
-        input_str = match.group(2) if match.group(2) else ""
-        is_input_url = is_url(input_str)
-        if is_input_url:
-            try:
-                dl_loc, _ = await url_download(message, message.filtered_input_str)
-                file_name = os.path.basename(dl_loc)
-            except ProcessCanceled:
-                await message.edit("`Process Canceled!`", del_in=5)
-                return
-            except Exception as e_e:
-                await message.err(e_e)
-                return
-    if dl_loc:
-        file_path = dl_loc
-    else:
-        file_path = message.filtered_input_str
-        file_name = os.path.basename(dl_loc)
-    if not os.path.exists(file_path):
-        await message.err("`Seems that an invalid file path provided?`")
-        return
-    await message.edit("`Starting transcribing...`")
-    processed = 0
-    async for _, error in api.transcribe(file_path):
-        if error:
-            await message.edit(error)
-            return
-        processed += 1
-        await message.edit(f"`Processed chunk {processed} of {api.chunks}`")
-    if send_text:
-        text_chunks = [api.text[i:i + config.MAX_MESSAGE_LENGTH] for i in
-                       range(0, len(api.text), config.MAX_MESSAGE_LENGTH)]
-        if len(text_chunks) == 1:
-            await message.edit(text_chunks[0])
-        else:
-            await message.edit(text_chunks[0])
-            for chunk in text_chunks[1:]:
-                await message.reply(chunk)
-                await sleep(2)
-    # send transcription text file
-    await message.client.send_as_file(
-        chat_id=message.chat.id, reply_to_message_id=message_id,
-        text=api.text, filename=f"{file_name}_{lang}_transcription.txt")
+    result = await transcribe_message(reply_msg)
+    if result is None or result == "":
+        return await msg.edit_text(
+            "<i>Transcription failed, maybe the message has no recognizable voice?</i>"
+        )
+    return await msg.edit_text(f"<b>Transcribed text:</b>\n{result}")
