@@ -64,6 +64,7 @@ async def _info(msg: Message):
   - **Last Online**: `{last_online(user)}`
   - **Common Groups**: `{len(common_chats)}`
   - **Contact**: `{user.is_contact}`
+  - **Premium**: `(user.is_premium}`
 """
     if user:
         if info.USERGE_ANTISPAM_API:
