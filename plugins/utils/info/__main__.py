@@ -61,6 +61,7 @@ async def _info(msg: Message):
   - **UserID**: `{user.id}`
   - **Data Center**: `{user.dc_id}`
   - **Username**: {username}
+  - **Premium**: `{user.is_premium}`
   - **Last Online**: `{last_online(user)}`
   - **Common Groups**: `{len(common_chats)}`
   - **Contact**: `{user.is_contact}`
