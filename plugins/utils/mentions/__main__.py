@@ -2,7 +2,7 @@ from pyrogram.errors import PeerIdInvalid
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram import enums
 
-from userge import userge, Message, filters, get_collection
+from userge import config, userge, Message, filters, get_collection
 
 class MentionsDB:
     def __init__(self):
