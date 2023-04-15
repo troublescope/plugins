@@ -7,12 +7,12 @@ from userge import userge, Message, filters, get_collection
 class MentionsDB:
     def __init__(self):
         self.db = get_collection("CONFIGS")
-        data = await self.db.find_one({"_id": "MENTION_TOGGLE"})
+        data = self.db.find_one({"_id": "MENTION_TOGGLE"})
         self.toggle = bool(data.get("data")) if data else False
 
     def update_toggle(self):
         self.toggle = not self.toggle
-        await self.db.update_one(
+        self.db.update_one(
             {"_id": "MENTION_TOGGLE"}, {"$set": {"data": self.toggle}}, upsert=True
         )
 
