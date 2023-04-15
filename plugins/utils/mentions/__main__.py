@@ -76,7 +76,7 @@ MENTIONS_DB = MentionsDB()
 )
 async def toggle_mentions(msg: Message):
     """ toggle mentions """
-    MENTIONS_DB.update_toggle()
+    await MENTIONS_DB.update_toggle()
     toggle_text = await MENTIONS_DB.get_toggle_text()
     await msg.edit(toggle_text)
 
